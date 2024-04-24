@@ -1,0 +1,77 @@
+pipeline {
+    agent any
+    
+    environment {
+        CODEQL_VERSION = '2.16.4'
+        OS = ''
+        TMPDIR = ''
+    }
+
+    stages {
+        stage('Create Temporary Directory') {
+            steps {
+                script {
+                    if (isUnix()) {
+                        OS = 'linux64'
+                    } else {
+                        OS = 'win64'
+                    }
+                    echo "OS set to ${OS}"
+
+                    // Create a temporary directory using shell commands
+                    TMPDIR = sh(returnStdout: true, script: 'mktemp -d').trim()
+                    echo "Using temp dir ${TMPDIR} ..."
+                }
+            }
+        }
+
+        stage('Download and Extract CodeQL CLI') {
+            steps {
+                script {
+                    echo "Downloading CodeQL CLI ..."
+                    sh "curl --location --silent --fail --output ${TMPDIR}/codeql.zip 'https://github.com/github/codeql-cli-binaries/releases/download/v${CODEQL_VERSION}/codeql-${OS}.zip'"
+                    echo "Extracting CodeQL CLI ..."
+                    sh "unzip -q ${TMPDIR}/codeql.zip -d ${TMPDIR}/codeql/"
+                    echo 'Adding CodeQL to PATH ...'
+                    env.PATH = "${TMPDIR}/codeql/:${env.PATH}"
+                }
+            }
+        }
+
+        stage('Install Query Pack Dependencies') {
+            steps {
+                script {
+                    echo "Downloading query pack dependencies ..."
+                    sh "codeql pack install test/"
+                }
+            }
+        }
+
+        stage('Run Query Tests') {
+            steps {
+                script {
+                    echo "Running query tests ..."
+                    sh "codeql test run test/"
+                }
+            }
+        }
+
+        stage('Cleanup') {
+            steps {
+                script {
+                    echo "Cleaning up temporary directory ${TMPDIR} ..."
+                    sh "rm -rf ${TMPDIR}"
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                echo "Final cleanup of temporary directory ${TMPDIR} ..."
+                sh "rm -rf ${TMPDIR}"
+            }
+        }
+    }
+}
